@@ -77,8 +77,6 @@ class StatusCommand:
         else:
             st_status = self.strategy.format_status()
         status = paper_trade + "\n" + st_status
-        if self._pmm_script_iterator is not None and live is False:
-            self._pmm_script_iterator.request_status()
         return status
 
     def application_warning(self):
@@ -141,10 +139,8 @@ class StatusCommand:
                 await self.stop_live_update()
                 self.app.live_updates = True
                 while self.app.live_updates and self.strategy:
-                    script_status = '\n Status from PMM script would not appear here. ' \
-                                    'Simply run the status command without "--live" to see PMM script status.'
                     await self.cls_display_delay(
-                        await self.strategy_status(live=True) + script_status + "\n\n Press escape key to stop update.", 0.1
+                        await self.strategy_status(live=True) + "\n\n Press escape key to stop update.", 0.1
                     )
                 self.app.live_updates = False
                 self.notify("Stopped live status display update.")

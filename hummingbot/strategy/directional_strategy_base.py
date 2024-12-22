@@ -10,13 +10,13 @@ from hummingbot import data_path
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.core.data_type.common import OrderType, PositionAction, PositionMode, PositionSide, TradeType
 from hummingbot.data_feed.candles_feed.candles_base import CandlesBase
-from hummingbot.smart_components.executors.position_executor.data_types import (
+from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
+from hummingbot.strategy_v2.executors.position_executor.data_types import (
     PositionExecutorConfig,
     TrailingStop,
     TripleBarrierConfig,
 )
-from hummingbot.smart_components.executors.position_executor.position_executor import PositionExecutor
-from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
+from hummingbot.strategy_v2.executors.position_executor.position_executor import PositionExecutor
 
 
 class DirectionalStrategyBase(ScriptStrategyBase):
@@ -33,7 +33,7 @@ class DirectionalStrategyBase(ScriptStrategyBase):
         stored_executors (List[PositionExecutor]): List of closed position executors that have been stored.
         stop_loss (float): The stop loss percentage.
         take_profit (float): The take profit percentage.
-        time_limit (int): The time limit for the position.
+        time_limit (int): The time limit for the position in seconds.
         open_order_type (OrderType): The order type for opening the position.
         open_order_slippage_buffer (float): The slippage buffer for the opening order.
         take_profit_order_type (OrderType): The order type for the take profit order.
@@ -46,6 +46,7 @@ class DirectionalStrategyBase(ScriptStrategyBase):
         leverage (float): The leverage to be used.
         order_amount_usd (Decimal): The order amount in USD.
         markets (Dict[str, Set[str]]): Dictionary mapping exchanges to trading pairs.
+        cooldown_after_execution (int): Cooldown between position executions, in seconds.
     """
     directional_strategy_name: str
     # Define the trading pair and exchange that we want to use and the csv where we are going to store the entries
@@ -208,7 +209,7 @@ class DirectionalStrategyBase(ScriptStrategyBase):
         if len(self.stored_executors) > 0:
             lines.extend(["\n################################## Closed Executors ##################################"])
         for executor in self.stored_executors:
-            lines.extend([f"|Signal id: {executor.position_config.timestamp}"])
+            lines.extend([f"|Signal id: {executor.config.timestamp}"])
             lines.extend(executor.to_format_status())
             lines.extend([
                 "-----------------------------------------------------------------------------------------------------------"])
@@ -217,7 +218,7 @@ class DirectionalStrategyBase(ScriptStrategyBase):
             lines.extend(["\n################################## Active Executors ##################################"])
 
         for executor in self.active_executors:
-            lines.extend([f"|Signal id: {executor.position_config.timestamp}"])
+            lines.extend([f"|Signal id: {executor.config.timestamp}"])
             lines.extend(executor.to_format_status())
         if self.all_candles_ready:
             lines.extend(["\n################################## Market Data ##################################\n"])

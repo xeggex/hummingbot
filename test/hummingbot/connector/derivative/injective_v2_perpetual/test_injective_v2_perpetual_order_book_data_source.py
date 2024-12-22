@@ -89,6 +89,11 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
             ".InjectiveGranteeDataSource.initialize_trading_account"
         )
         self.initialize_trading_account_patch.start()
+        self._initialize_timeout_height_patch = patch(
+            "hummingbot.connector.exchange.injective_v2.data_sources.injective_grantee_data_source"
+            ".AsyncClient.sync_timeout_height"
+        )
+        self._initialize_timeout_height_patch.start()
 
         self.query_executor = ProgrammableQueryExecutor()
         self.connector._data_source._query_executor = self.query_executor
@@ -106,6 +111,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
 
     def tearDown(self) -> None:
         self.async_run_with_timeout(self.data_source._data_source.stop())
+        self._initialize_timeout_height_patch.stop()
         self.initialize_trading_account_patch.stop()
         for task in self.async_tasks:
             task.cancel()
@@ -615,6 +621,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
                         "cumulativePrice": "1.432536051546776736",
                         "lastTimestamp": "1689423842"
                     },
+                    "minNotional": "1000000",
                 }
             }
         )
@@ -760,6 +767,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
                     "cumulativePrice": "1.432536051546776736",
                     "lastTimestamp": "1689423842"
                 },
+                "minNotional": "1000000",
             }
         }
         self.query_executor._derivative_market_responses.put_nowait(derivative_market_info)
@@ -906,6 +914,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
                     "cumulativePrice": "1.432536051546776736",
                     "lastTimestamp": "1689423842"
                 },
+                "minNotional": "1000000",
             }
         }
         self.query_executor._derivative_market_responses.put_nowait(derivative_market_info)
@@ -955,6 +964,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
             service_provider_fee=Decimal("0.4"),
             min_price_tick_size=Decimal("0.000000000000001"),
             min_quantity_tick_size=Decimal("1000000000000000"),
+            min_notional=Decimal("1000000"),
         )
 
         return {native_market.id: native_market}
@@ -986,6 +996,7 @@ class InjectiveV2APIOrderBookDataSourceTests(TestCase):
             service_provider_fee=Decimal("0.4"),
             min_price_tick_size=Decimal("100"),
             min_quantity_tick_size=Decimal("0.0001"),
+            min_notional=Decimal("1000000"),
         )
 
         return {native_market.id: native_market}
