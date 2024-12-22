@@ -1,10 +1,8 @@
 import json
-import os.path
 import random
 import re
 from abc import ABC, abstractmethod
 from decimal import Decimal
-from os.path import dirname
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Union
 
@@ -14,30 +12,21 @@ from tabulate import tabulate_formats
 from hummingbot.client.config.config_data_types import BaseClientModel, ClientConfigEnum, ClientFieldData
 from hummingbot.client.config.config_methods import using_exchange as using_exchange_pointer
 from hummingbot.client.config.config_validators import validate_bool, validate_float
-from hummingbot.client.settings import (
-    DEFAULT_GATEWAY_CERTS_PATH,
-    DEFAULT_LOG_FILE_PATH,
-    PMM_SCRIPTS_PATH,
-    AllConnectorSettings,
-)
+from hummingbot.client.settings import DEFAULT_GATEWAY_CERTS_PATH, DEFAULT_LOG_FILE_PATH, AllConnectorSettings
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.connector.connector_metrics_collector import (
     DummyMetricsCollector,
     MetricsCollector,
     TradeVolumeMetricCollector,
 )
-from hummingbot.connector.exchange.ascend_ex.ascend_ex_utils import AscendExConfigMap
 from hummingbot.connector.exchange.binance.binance_utils import BinanceConfigMap
 from hummingbot.connector.exchange.gate_io.gate_io_utils import GateIOConfigMap
-from hummingbot.connector.exchange.injective_v2.injective_v2_utils import InjectiveConfigMap
+from hummingbot.connector.exchange.kraken.kraken_utils import KrakenConfigMap
 from hummingbot.connector.exchange.kucoin.kucoin_utils import KuCoinConfigMap
-from hummingbot.connector.exchange_base import ExchangeBase
 from hummingbot.core.rate_oracle.rate_oracle import RATE_ORACLE_SOURCES, RateOracle
 from hummingbot.core.rate_oracle.sources.rate_source_base import RateSourceBase
 from hummingbot.core.utils.kill_switch import ActiveKillSwitch, KillSwitch, PassThroughKillSwitch
 from hummingbot.notifier.telegram_notifier import TelegramNotifier
-from hummingbot.pmm_script.pmm_script_iterator import PMMScriptIterator
-from hummingbot.strategy.strategy_base import StrategyBase
 
 if TYPE_CHECKING:
     from hummingbot.client.hummingbot_application import HummingbotApplication
@@ -154,7 +143,7 @@ class MQTTBridgeConfigMap(BaseClientModel):
 
 class MarketDataCollectionConfigMap(BaseClientModel):
     market_data_collection_enabled: bool = Field(
-        default=True,
+        default=False,
         client_data=ClientFieldData(
             prompt=lambda cm: (
                 "Enable/Disable Market Data Collection"
@@ -305,22 +294,20 @@ class PaperTradeConfigMap(BaseClientModel):
         default=[
             BinanceConfigMap.Config.title,
             KuCoinConfigMap.Config.title,
-            AscendExConfigMap.Config.title,
+            KrakenConfigMap.Config.title,
             GateIOConfigMap.Config.title,
-            InjectiveConfigMap.Config.title,
         ],
     )
     paper_trade_account_balance: Dict[str, float] = Field(
         default={
             "BTC": 1,
-            "USDT": 1000,
-            "ONE": 1000,
-            "USDQ": 1000,
-            "TUSD": 1000,
-            "ETH": 10,
-            "WETH": 10,
-            "USDC": 1000,
-            "DAI": 1000,
+            "USDT": 100000,
+            "USDC": 100000,
+            "ETH": 20,
+            "WETH": 20,
+            "SOL": 100,
+            "DOGE": 1000000,
+            "HBOT": 10000000,
         },
         client_data=ClientFieldData(
             prompt=lambda cm: (
@@ -512,76 +499,6 @@ DB_MODES = {
 }
 
 
-class PMMScriptMode(BaseClientModel, ABC):
-    @abstractmethod
-    def get_iterator(
-            self,
-            strategy_name: str,
-            markets: List[ExchangeBase],
-            strategy: StrategyBase) -> Optional[PMMScriptIterator]:
-        ...
-
-
-class PMMScriptDisabledMode(PMMScriptMode):
-    class Config:
-        title = "pmm_script_disabled"
-
-    def get_iterator(
-            self,
-            strategy_name: str,
-            markets: List[ExchangeBase],
-            strategy: StrategyBase) -> Optional[PMMScriptIterator]:
-        return None
-
-
-class PMMScriptEnabledMode(PMMScriptMode):
-    pmm_script_file_path: str = Field(
-        default=...,
-        client_data=ClientFieldData(prompt=lambda cm: "Enter path to your PMM script file"),
-    )
-
-    class Config:
-        title = "pmm_script_enabled"
-
-    def get_iterator(
-            self,
-            strategy_name: str,
-            markets: List[ExchangeBase],
-            strategy: StrategyBase) -> Optional[PMMScriptIterator]:
-        if strategy_name != "pure_market_making":
-            raise ValueError("PMM script feature is only available for pure_market_making strategy.")
-        folder = dirname(self.pmm_script_file_path)
-        pmm_script_file = (
-            PMM_SCRIPTS_PATH / self.pmm_script_file_path
-            if folder == ""
-            else self.pmm_script_file_path
-        )
-        pmm_script_iterator = PMMScriptIterator(
-            pmm_script_file,
-            markets,
-            strategy,
-            queue_check_interval=0.1,
-        )
-        return pmm_script_iterator
-
-    @validator("pmm_script_file_path", pre=True)
-    def validate_pmm_script_file_path(cls, v: str):
-        import hummingbot.client.settings as settings
-        file_path = v
-        path, name = os.path.split(file_path)
-        if path == "":
-            file_path = os.path.join(settings.PMM_SCRIPTS_PATH, file_path)
-        if not os.path.isfile(file_path):
-            raise ValueError(f"{file_path} file does not exist.")
-        return file_path
-
-
-PMM_SCRIPT_MODES = {
-    PMMScriptDisabledMode.Config.title: PMMScriptDisabledMode,
-    PMMScriptEnabledMode.Config.title: PMMScriptEnabledMode,
-}
-
-
 class GatewayConfigMap(BaseClientModel):
     gateway_api_host: str = Field(
         default="localhost",
@@ -768,6 +685,28 @@ class BinanceRateSourceMode(ExchangeRateSourceModeBase):
         title = "binance"
 
 
+class BinanceUSRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="binance_us",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title = "binance_us"
+
+
+class CubeRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="cube",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title = "cube"
+
+
 class CoinGeckoRateSourceMode(RateSourceModeBase):
     name: str = Field(
         default="coin_gecko",
@@ -910,13 +849,39 @@ class GateIoRateSourceMode(ExchangeRateSourceModeBase):
         title: str = "gate_io"
 
 
+class DexalotRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="dexalot",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title: str = "dexalot"
+
+
+class CoinbaseAdvancedTradeRateSourceMode(ExchangeRateSourceModeBase):
+    name: str = Field(
+        default="coinbase_advanced_trade",
+        const=True,
+        client_data=None,
+    )
+
+    class Config:
+        title: str = "coinbase_advanced_trade"
+
+
 RATE_SOURCE_MODES = {
     AscendExRateSourceMode.Config.title: AscendExRateSourceMode,
     BinanceRateSourceMode.Config.title: BinanceRateSourceMode,
+    BinanceUSRateSourceMode.Config.title: BinanceUSRateSourceMode,
     CoinGeckoRateSourceMode.Config.title: CoinGeckoRateSourceMode,
     CoinCapRateSourceMode.Config.title: CoinCapRateSourceMode,
+    DexalotRateSourceMode.Config.title: DexalotRateSourceMode,
     KuCoinRateSourceMode.Config.title: KuCoinRateSourceMode,
     GateIoRateSourceMode.Config.title: GateIoRateSourceMode,
+    CoinbaseAdvancedTradeRateSourceMode.Config.title: CoinbaseAdvancedTradeRateSourceMode,
+    CubeRateSourceMode.Config.title: CubeRateSourceMode,
 }
 
 
@@ -999,12 +964,6 @@ class ClientConfigMap(BaseClientModel):
                      "\n  db_name: dbname"),
         client_data=ClientFieldData(
             prompt=lambda cm: f"Select the desired db mode ({'/'.join(list(DB_MODES.keys()))})",
-        ),
-    )
-    pmm_script_mode: Union[tuple(PMM_SCRIPT_MODES.values())] = Field(
-        default=PMMScriptDisabledMode(),
-        client_data=ClientFieldData(
-            prompt=lambda cm: f"Select the desired PMM script mode ({'/'.join(list(PMM_SCRIPT_MODES.keys()))})",
         ),
     )
     balance_asset_limit: Dict[str, Dict[str, Decimal]] = Field(
@@ -1172,18 +1131,6 @@ class ClientConfigMap(BaseClientModel):
             )
         else:
             sub_model = DB_MODES[v].construct()
-        return sub_model
-
-    @validator("pmm_script_mode", pre=True)
-    def validate_pmm_script_mode(cls, v: Union[(str, Dict) + tuple(PMM_SCRIPT_MODES.values())]):
-        if isinstance(v, tuple(PMM_SCRIPT_MODES.values()) + (Dict,)):
-            sub_model = v
-        elif v not in PMM_SCRIPT_MODES:
-            raise ValueError(
-                f"Invalid PMM script mode, please choose a value from {list(PMM_SCRIPT_MODES.keys())}."
-            )
-        else:
-            sub_model = PMM_SCRIPT_MODES[v].construct()
         return sub_model
 
     @validator("anonymized_metrics_mode", pre=True)

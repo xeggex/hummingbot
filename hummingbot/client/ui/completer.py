@@ -15,13 +15,11 @@ from hummingbot.client.command.connect_command import OPTIONS as CONNECT_OPTIONS
 from hummingbot.client.config.config_data_types import BaseClientModel
 from hummingbot.client.settings import (
     GATEWAY_CONNECTORS,
-    PMM_SCRIPTS_PATH,
     SCRIPT_STRATEGIES_PATH,
     SCRIPT_STRATEGY_CONF_DIR_PATH,
     STRATEGIES,
     STRATEGIES_CONF_DIR_PATH,
     AllConnectorSettings,
-    GatewayTokenSetting,
 )
 from hummingbot.client.ui.parser import ThrowingArgumentParser
 from hummingbot.core.rate_oracle.rate_oracle import RATE_ORACLE_SOURCES
@@ -66,18 +64,34 @@ class HummingbotCompleter(Completer):
         self._gateway_completer = WordCompleter(["balance", "config", "connect", "connector-tokens", "generate-certs", "test-connection", "list", "approve-tokens"], ignore_case=True)
         self._gateway_connect_completer = WordCompleter(GATEWAY_CONNECTORS, ignore_case=True)
         self._gateway_connector_tokens_completer = WordCompleter(
-            GatewayTokenSetting.get_gateway_chains_with_network(), ignore_case=True
+            sorted(
+                AllConnectorSettings.get_gateway_amm_connector_names().union(
+                    AllConnectorSettings.get_gateway_clob_connector_names().union(
+                        AllConnectorSettings.get_gateway_evm_amm_lp_connector_names()
+                    )
+                )
+            ), ignore_case=True
+        )
+        self._gateway_balance_completer = WordCompleter(
+            sorted(
+                AllConnectorSettings.get_gateway_amm_connector_names().union(
+                    AllConnectorSettings.get_gateway_clob_connector_names().union(
+                        AllConnectorSettings.get_gateway_evm_amm_lp_connector_names()
+                    )
+                )
+            ), ignore_case=True
         )
         self._gateway_approve_tokens_completer = WordCompleter(
             sorted(
                 AllConnectorSettings.get_gateway_amm_connector_names().union(
-                    AllConnectorSettings.get_gateway_clob_connector_names()
+                    AllConnectorSettings.get_gateway_clob_connector_names().union(
+                        AllConnectorSettings.get_gateway_evm_amm_lp_connector_names()
+                    )
                 )
             ), ignore_case=True
         )
         self._gateway_config_completer = WordCompleter(hummingbot_application.gateway_config_keys, ignore_case=True)
         self._strategy_completer = WordCompleter(STRATEGIES, ignore_case=True)
-        self._py_file_completer = WordCompleter(file_name_list(str(PMM_SCRIPTS_PATH), "py"))
         self._script_strategy_completer = WordCompleter(file_name_list(str(SCRIPT_STRATEGIES_PATH), "py"))
         self._scripts_config_completer = WordCompleter(file_name_list(str(SCRIPT_STRATEGY_CONF_DIR_PATH), "yml"))
         self._strategy_v2_create_config_completer = self.get_strategies_v2_with_config()
@@ -217,7 +231,7 @@ class HummingbotCompleter(Completer):
         return "spot" in self.prompt_text
 
     def _complete_lp_connector(self, document: Document) -> bool:
-        return "LP" in self.prompt_text
+        return " LP" in self.prompt_text
 
     def _complete_trading_timeframe(self, document: Document) -> bool:
         return any(x for x in ("trading timeframe", "execution timeframe")
@@ -242,6 +256,10 @@ class HummingbotCompleter(Completer):
     def _complete_gateway_connector_tokens_arguments(self, document: Document) -> bool:
         text_before_cursor: str = document.text_before_cursor
         return text_before_cursor.startswith("gateway connector-tokens ")
+
+    def _complete_gateway_balance_arguments(self, document: Document) -> bool:
+        text_before_cursor: str = document.text_before_cursor
+        return text_before_cursor.startswith("gateway balance ")
 
     def _complete_gateway_approve_tokens_arguments(self, document: Document) -> bool:
         text_before_cursor: str = document.text_before_cursor
@@ -412,6 +430,10 @@ class HummingbotCompleter(Completer):
 
         elif self._complete_gateway_connector_tokens_arguments(document):
             for c in self._gateway_connector_tokens_completer.get_completions(document, complete_event):
+                yield c
+
+        elif self._complete_gateway_balance_arguments(document):
+            for c in self._gateway_balance_completer.get_completions(document, complete_event):
                 yield c
 
         elif self._complete_gateway_approve_tokens_arguments(document):

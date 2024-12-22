@@ -522,6 +522,7 @@ class KucoinExchangeTests(unittest.TestCase):
         regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
 
         creation_response = {
+            "code": "200000",
             "data": {
                 "orderId": "5bd6e9286d99522a52e458de"
             }}
@@ -563,7 +564,8 @@ class KucoinExchangeTests(unittest.TestCase):
         self.assertTrue(
             self._is_logged(
                 "INFO",
-                f"Created LIMIT BUY order OID1 for {Decimal('100.000000')} {self.trading_pair}."
+                f"Created LIMIT BUY order OID1 for {Decimal('100.000000')} {self.trading_pair} "
+                f"at {Decimal('10000.0000')}."
             )
         )
 
@@ -576,6 +578,7 @@ class KucoinExchangeTests(unittest.TestCase):
         regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
 
         creation_response = {
+            "code": "200000",
             "data": {
                 "orderId": "5bd6e9286d99522a52e458de"
             }}
@@ -618,9 +621,42 @@ class KucoinExchangeTests(unittest.TestCase):
         self.assertTrue(
             self._is_logged(
                 "INFO",
-                f"Created LIMIT_MAKER BUY order OID1 for {Decimal('100.000000')} {self.trading_pair}."
+                f"Created LIMIT_MAKER BUY order OID1 for {Decimal('100.000000')} {self.trading_pair} "
+                f"at {Decimal('10000.0000')}."
             )
         )
+
+    @aioresponses()
+    @patch("hummingbot.connector.exchange.kucoin.kucoin_exchange.KucoinExchange.get_price")
+    def test_create_order_with_wrong_params_raises_io_error(self, mock_api, get_price_mock):
+        get_price_mock.return_value = Decimal(1000)
+        self._simulate_trading_rules_initialized()
+        request_sent_event = asyncio.Event()
+        self.exchange._set_current_timestamp(1640780000)
+        url = web_utils.private_rest_url(CONSTANTS.ORDERS_PATH_URL)
+        regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
+
+        creation_response = {
+            "code": "300000",
+            "msg": "The quantity is invalid."}
+
+        mock_api.post(regex_url,
+                      body=json.dumps(creation_response),
+                      callback=lambda *args, **kwargs: request_sent_event.set())
+
+        self._simulate_trading_rules_initialized()
+
+        with self.assertRaises(IOError):
+            asyncio.get_event_loop().run_until_complete(
+                self.exchange._place_order(
+                    trade_type=TradeType.BUY,
+                    order_id="C1",
+                    trading_pair=self.trading_pair,
+                    amount=Decimal("0"),
+                    order_type=OrderType.LIMIT,
+                    price=Decimal("46000"),
+                ),
+            )
 
     @aioresponses()
     @patch("hummingbot.connector.exchange.kucoin.kucoin_exchange.KucoinExchange.get_price")
@@ -633,6 +669,7 @@ class KucoinExchangeTests(unittest.TestCase):
         regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
 
         creation_response = {
+            "code": "200000",
             "data": {
                 "orderId": "5bd6e9286d99522a52e458de"
             }}
@@ -673,7 +710,8 @@ class KucoinExchangeTests(unittest.TestCase):
         self.assertTrue(
             self._is_logged(
                 "INFO",
-                f"Created MARKET SELL order OID1 for {Decimal('100.000000')} {self.trading_pair}."
+                f"Created MARKET SELL order OID1 for {Decimal('100.000000')} {self.trading_pair} "
+                f"at {None}."
             )
         )
 
@@ -708,7 +746,7 @@ class KucoinExchangeTests(unittest.TestCase):
         self.assertEqual(self.exchange.current_timestamp, failure_event.timestamp)
         self.assertEqual(OrderType.LIMIT, failure_event.order_type)
         self.assertEqual("OID1", failure_event.order_id)
-
+        self.assertRaises(IOError)
         self.assertTrue(
             self._is_logged(
                 "INFO",
@@ -777,7 +815,6 @@ class KucoinExchangeTests(unittest.TestCase):
     def test_cancel_order_successfully(self, mock_api):
         request_sent_event = asyncio.Event()
         self.exchange._set_current_timestamp(1640780000)
-
         self.exchange.start_tracking_order(
             order_id="OID1",
             exchange_order_id="4",
@@ -795,7 +832,12 @@ class KucoinExchangeTests(unittest.TestCase):
         regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
 
         response = {
-            "data": {"cancelledOrderIds": [order.exchange_order_id]}
+            "code": "200000",
+            "data": {
+                "cancelledOrderIds": [
+                    order.exchange_order_id
+                ]
+            }
         }
 
         mock_api.delete(regex_url,
@@ -945,7 +987,12 @@ class KucoinExchangeTests(unittest.TestCase):
         regex_url = re.compile(f"^{url}".replace(".", r"\.").replace("?", r"\?"))
 
         response = {
-            "data": {"cancelledOrderIds": [order1.exchange_order_id]}
+            "code": "200000",
+            "data": {
+                "cancelledOrderIds": [
+                    order1.exchange_order_id
+                ]
+            }
         }
 
         mock_api.delete(regex_url, body=json.dumps(response))
@@ -2202,7 +2249,14 @@ class KucoinExchangeTests(unittest.TestCase):
 
         self.assertEqual(1, self.exchange._order_tracker._order_not_found_records[order.client_order_id])
 
-    def test_update_order_status_marks_order_with_no_exchange_id_as_not_found(self):
+    @aioresponses()
+    def test_update_order_status_marks_order_with_no_exchange_id_as_not_found(self, mock_api):
+        url_fills = web_utils.private_rest_url(
+            f"{CONSTANTS.FILLS_PATH_URL}?pageSize=500&startAt=")
+        regex_url_fills = re.compile(f"^{url_fills}".replace(".", r"\.").replace("?", r"\?"))
+
+        mock_api.get(regex_url_fills, body=json.dumps({}))
+
         update_event = MagicMock()
         update_event.wait.side_effect = asyncio.TimeoutError
 
@@ -2286,7 +2340,8 @@ class KucoinExchangeTests(unittest.TestCase):
             self._is_logged(
                 "INFO",
                 f"Created {order.order_type.name.upper()} {order.trade_type.name.upper()} order "
-                f"{order.client_order_id} for {order.amount} {order.trading_pair}."
+                f"{order.client_order_id} for {order.amount} {order.trading_pair} "
+                f"at {Decimal('10000')}."
             )
         )
 
@@ -2420,7 +2475,7 @@ class KucoinExchangeTests(unittest.TestCase):
 
         self.assertTrue(
             self._is_logged("INFO", f"The {order.trade_type.name} order {order.client_order_id} amounting to "
-                                    f"0.1/{order.amount} {order.base_asset} has been filled.")
+                                    f"0.1/{order.amount} {order.base_asset} has been filled at {Decimal('10010.5')} HBOT.")
         )
 
     def test_user_stream_update_for_order_fill(self):
@@ -2627,3 +2682,13 @@ class KucoinExchangeTests(unittest.TestCase):
 
         self.assertEqual(expected_initial_dict, status_dict)
         self.assertFalse(self.exchange.ready)
+
+    def test_time_synchronizer_related_request_error_detection(self):
+        error_code = CONSTANTS.RET_CODE_AUTH_TIMESTAMP_ERROR
+        response = {"code": error_code, "msg": "Invalid KC-API-TIMESTAMP"}
+        exception = IOError(f"Error executing request GET https://someurl. HTTP status is 400. Error: {json.dumps(response)}")
+        self.assertTrue(self.exchange._is_request_exception_related_to_time_synchronizer(exception))
+
+        error_code = CONSTANTS.RET_CODE_ORDER_NOT_EXIST_OR_NOT_ALLOW_TO_CANCEL
+        exception = IOError(f"{error_code} - Failed to cancel order because it was not found.")
+        self.assertFalse(self.exchange._is_request_exception_related_to_time_synchronizer(exception))
